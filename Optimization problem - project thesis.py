@@ -101,6 +101,8 @@ def InputData(data_file):  # reading the excel file with the values of generatio
 
 power_prices = InputData('Power prices 8760 1.0.xlsx')
 
+print(power_prices)
+
 
 # %% ----- Variables ----- #
 

@@ -12,11 +12,11 @@ def read_previous_spot(year: int, zone: str) -> dict:
     # Read excel
     data = pd.read_excel(filename)
     # Extratc numbers from the right price zone
-    data = data[zone]
+    data = data[zone] * 100 # TODO: check øre/kr and MWh/kWh
 
     # Convert to dictionary
     price_dict = data.to_dict()
 
     return price_dict
 
-read_previous_spot(2023, "NO5")
+#print(read_previous_spot(2023, "NO5")[5])
