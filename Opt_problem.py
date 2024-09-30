@@ -19,14 +19,18 @@ gen_lowcap = 0
 # TODO: check if numbers are correct
 
 # Production price (cost) in NOK/MWh (marginal cost)
-MC_gen = 100.0  # Example, will be lower
-MC_turbo = MC_gen * 1.1  # Example
+MC_base = 100.0  # Example, will be lower
+MC_turbo = MC_base * 1.1  # Example
 # TODO: find more correct numbers
 
 # Defining ramping limits for electric generator
 lower_ramp_lim = -5  # [%/min]
 upper_ramp_lim = 5
 # TODO: check if numbers are correct
+
+# Converting ramping limits
+gen_lowramp = lower_ramp_lim * 0.6 * gen_maxcap  # [MW/h] (0.6 comes when converting from %/min to MW/h)
+gen_maxramp = upper_ramp_lim * 0.6 * gen_maxcap  # [MW/h]
 
 # --- TES --- #
 
@@ -44,11 +48,17 @@ outflow_maxcap = 300  # [MW]
 outflow_lowcap = 0
 # TODO: check if numbers are correct
 
+
 # Defining TES capacity
-tes_maxcap = outflow_maxcap * t_tes  # [MWh]
+#tes_maxcap = outflow_maxcap * t_tes  # [MWh]
 tes_lowcap = 0
 # TODO: check if numbers are correct
 
+#
+interest_rate = 0.05
+investment_cost = 800000 # NOK/MWh
+lifetime = 40 # Years
+# TODO: check if numbers are correct
 
 # %% ----- Dependencies ----- #
 
@@ -84,13 +94,14 @@ model.inflow_tes = pyo.Var(hours, within = pyo.NonNegativeReals)  # inflow to TE
 model.inflow_tes_state = pyo.Var(hours, within = pyo.Binary)  # inflow to TES state in each hour
 model.fuel_tes = pyo.Var(hours, within = pyo.NonNegativeReals)  # fuel level in TES in each hour
 model.tes_full_state = pyo.Var(hours, within = pyo.Binary)  # tes full state
-
+model.tes_maxcap = pyo.Var(within = pyo.NonNegativeReals)
 
 # %% ----- Objective Function: Maximize the surplus (profit) ----- #
 
 def objective_rule(model):
     return sum(
-        (power_prices[hour] - MC_gen) * model.basepow[hour] + model.outflow_tes[hour] * (power_prices[hour] - MC_turbo)
+        - investment_cost * model.tes_maxcap * interest_rate / (1 - (1 + interest_rate) ** (- lifetime)) +
+        (power_prices[hour] - MC_base) * model.basepow[hour] + (power_prices[hour] - MC_turbo) * model.outflow_tes[hour]
         for hour in hours)
 
 
@@ -99,40 +110,27 @@ model.objective = pyo.Objective(rule = objective_rule, sense = pyo.maximize)
 
 # %% ----- Reactor Heat Extract Constraints ----- #
 
+# Maximum production per hour
 def production_limit_upper(model, hour):
     return model.basepow[hour] + model.inflow_tes[hour] <= gen_maxcap
-
-
 model.prod_limup = pyo.Constraint(hours, rule = production_limit_upper)
 
-
+# Minimum production per hour
 def production_limit_lower(model, hour):
     return gen_lowcap <= model.basepow[hour] + model.inflow_tes[hour]
-
-
 model.prod_limlow = pyo.Constraint(hours, rule = production_limit_lower)
 
 # %% ----- Ramping Constraints ----- #
 
-
-# Converting ramping limits
-gen_lowramp = lower_ramp_lim * 0.6 * gen_maxcap  # [MW/h]
-gen_maxramp = upper_ramp_lim * 0.6 * gen_maxcap
-
-
-# TODO: Find out where 0.6 came from
-
-
+# Ramping constraint (max)
 def production_ramping_up(model, hour):
     if hour == step1:
         return pyo.Constraint.Skip
     else:
         return model.power_generation[hour] - model.power_generation[hour - 1] <= gen_maxramp
-
-
 model.prod_rampup = pyo.Constraint(hours, rule = production_ramping_up)
 
-
+# Ramping constraint (min)
 def production_ramping_down(model, hour):
     if hour == step1:
         return pyo.Constraint.Skip
@@ -142,15 +140,13 @@ def production_ramping_down(model, hour):
 
 # %% ----- TES Energy Balance Constraint ----- #
 
-
+# Energy balance
 def tes_balance(model, hour):
     if hour == step1:
         return model.fuel_tes[hour] == 0
     else:
         return model.fuel_tes[hour] == model.fuel_tes[hour - 1] + model.inflow_tes[hour - 1] - model.outflow_tes[
             hour - 1]
-
-
 model.tes_energy_bal = pyo.Constraint(hours, rule = tes_balance)
 
 # %% ----- TES Flow Constraints using big M ----- #
@@ -185,16 +181,12 @@ model.binary_constraint2 = pyo.Constraint(hours, rule = binary_inflow)
 # Constraint to link binary variable
 
 def binary_tescap(model, hour):
-    return model.fuel_tes[hour] >= tes_maxcap * model.tes_full_state[hour]
-
-
+    return model.fuel_tes[hour] >= model.tes_maxcap * model.tes_full_state[hour]
 model.binary_constraintfullcap = pyo.Constraint(hours, rule = binary_tescap)
 
 
 def binary_tescap2(model, hour):
-    return model.fuel_tes[hour] <= (1 - model.tes_full_state[hour]) * (tes_maxcap - 1) + M * model.tes_full_state[hour]
-
-
+    return model.fuel_tes[hour] <= (1 - model.tes_full_state[hour]) * (model.tes_maxcap - 1) + M * model.tes_full_state[hour]
 model.binary_constraintfullcap2 = pyo.Constraint(hours, rule = binary_tescap2)
 
 
@@ -202,15 +194,11 @@ model.binary_constraintfullcap2 = pyo.Constraint(hours, rule = binary_tescap2)
 
 def tes_inflow_limit_upper(model, hour):
     return model.inflow_tes[hour] <= inflow_maxcap
-
-
 model.tesin_limup = pyo.Constraint(hours, rule = tes_inflow_limit_upper)
 
 
 def tes_inflow_limit_lower(model, hour):
     return inflow_lowcap <= model.inflow_tes[hour]
-
-
 model.tesin_limlow = pyo.Constraint(hours, rule = tes_inflow_limit_lower)
 
 
@@ -218,31 +206,23 @@ model.tesin_limlow = pyo.Constraint(hours, rule = tes_inflow_limit_lower)
 
 def tes_outflow_limit_upper(model, hour):
     return model.outflow_tes[hour] <= outflow_maxcap
-
-
 model.tesout_limup = pyo.Constraint(hours, rule = tes_outflow_limit_upper)
 
 
 def tes_outflow_limit_lower(model, hour):
     return outflow_lowcap <= model.outflow_tes[hour]
-
-
 model.tesout_limlow = pyo.Constraint(hours, rule = tes_outflow_limit_lower)
 
 
 # %% ----- TES Capacity Constraint ----- #
 
 def tes_cap_upper(model, hour):
-    return model.fuel_tes[hour] <= tes_maxcap
-
-
+    return model.fuel_tes[hour] <= model.tes_maxcap
 model.tes_up_cap = pyo.Constraint(hours, rule = tes_cap_upper)
 
 
 def tes_cap_lower(model, hour):
     return tes_lowcap <= model.fuel_tes[hour]
-
-
 model.tes_low_cap = pyo.Constraint(hours, rule = tes_cap_lower)
 
 
@@ -250,8 +230,6 @@ model.tes_low_cap = pyo.Constraint(hours, rule = tes_cap_lower)
 
 def comb_power(model, hour):
     return model.power_generation[hour] == model.basepow[hour] + model.outflow_tes[hour]
-
-
 model.combining_power = pyo.Constraint(hours, rule = comb_power)
 
 # %% ----- Solving the optimization problem ----- #
@@ -264,7 +242,8 @@ print('\n')
 
 # %% ----- Printing and plotting results ----- #
 
-print("Optimal Surplus: ", pyo.value(model.objective), "NOK")
+print("Surplus: ", pyo.value(model.objective), "NOK")
+print(f'Optmial TES size: {model.tes_maxcap.value} MWh')
 
 # ---- Plotting distribution ---- #
 
@@ -329,10 +308,11 @@ plt.show()
 """
 
 # Creating plot for tes capacity
-fig, cap = plt.subplots(figsize=(50, 6))
+fig, cap = plt.subplots(figsize=(50, 10))
 cap.set_xlabel("Hours [h]", fontsize=40)
 cap.set_ylabel("[MWh]", fontsize=40)  
-cap.tick_params(axis='both', labelsize=35)  
+cap.tick_params(axis='both', labelsize=35)
+tes_maxcap = model.tes_maxcap.value
 cap.set_yticks([tes_maxcap/2, tes_maxcap])
 cap.plot(hourslist[:tf - step1], val_capacity[:tf - step1], color='y')
 cap2 = cap.twinx()
@@ -403,7 +383,7 @@ if step1 == 1 and tf == 8758:
                 mon_cap_lim[mon_ins[m]] += model.tes_full_state[h].value
                 pp_t += power_prices[h]
 
-            if power_prices[h] > MC_gen:
+            if power_prices[h] > MC_base:
                 h_profit += 1
 
             avg_pp.append(pp_t / mon_lens[m])
