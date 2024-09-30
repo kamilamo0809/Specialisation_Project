@@ -20,9 +20,9 @@ gen_lowcap = 0
 # TODO: check if numbers are correct
 
 # Production price (cost) in NOK/MWh (marginal cost)
-MC_base = 100.0  # Example, will be lower
-MC_turbo = MC_base * 1.1  # Example
-# TODO: find more correct numbers
+MC_gen = 10.0  # Example, will be lower
+MC_turbo = MC_gen * 1.1  # Example
+# TODO: find more correct numbers var 100 før!
 
 # Defining ramping limits for electric generator
 lower_ramp_lim = -5  # [%/min]
@@ -57,7 +57,7 @@ tes_lowcap = 0
 
 #
 interest_rate = 0.05
-investment_cost = 8000 # NOK/MWh
+investment_cost = 100 # NOK/MWh
 lifetime = 40 # Years
 # TODO: check if numbers are correct
 
@@ -101,11 +101,9 @@ model.tes_maxcap = pyo.Var(within = pyo.NonNegativeReals)
 
 def objective_rule(model):
     return sum(
-        - investment_cost * model.tes_maxcap * interest_rate / (1 - (1 + interest_rate) ** (- lifetime)) +
-        (power_prices[hour] - MC_base) * model.basepow[hour] + (power_prices[hour] - MC_turbo) * model.outflow_tes[hour]
-        for hour in hours)
-
-
+        - investment_cost * model.tes_maxcap * interest_rate / (1 - (1 + interest_rate) ** (- lifetime)) + (
+                    power_prices[hour] - MC_gen) * model.basepow[hour] + model.outflow_tes[hour] * (
+                    power_prices[hour] - MC_turbo) for hour in hours)
 model.objective = pyo.Objective(rule = objective_rule, sense = pyo.maximize)
 
 
@@ -146,8 +144,7 @@ def tes_balance(model, hour):
     if hour == step1:
         return model.fuel_tes[hour] == 0
     else:
-        return model.fuel_tes[hour] == model.fuel_tes[hour - 1] + model.inflow_tes[hour - 1] - model.outflow_tes[
-            hour - 1]
+        return model.fuel_tes[hour] == model.fuel_tes[hour - 1] + model.inflow_tes[hour - 1] - model.outflow_tes[hour - 1]
 model.tes_energy_bal = pyo.Constraint(hours, rule = tes_balance)
 
 # %% ----- TES Flow Constraints using big M ----- #
@@ -172,9 +169,7 @@ model.binary_constraint1 = pyo.Constraint(hours, rule = binary_powgen)
 
 def binary_inflow(model, hour):
     return model.inflow_tes[hour] <= model.inflow_tes_state[hour] * M
-
-
-model.binary_constraint2 = pyo.Constraint(hours, rule = binary_inflow)
+model.binary_constraint2 = pyo.Constraint(hours, rule=binary_inflow)
 
 
 # %% ----- TES Capacity Limit state link and time constraint ----- #
@@ -183,7 +178,7 @@ model.binary_constraint2 = pyo.Constraint(hours, rule = binary_inflow)
 
 def binary_tescap(model, hour):
     return model.fuel_tes[hour] >= model.tes_maxcap * model.tes_full_state[hour]
-model.binary_constraintfullcap = pyo.Constraint(hours, rule = binary_tescap)
+model.binary_constraintfullcap = pyo.Constraint(hours, rule=binary_tescap)
 
 
 def binary_tescap2(model, hour):
@@ -195,47 +190,47 @@ model.binary_constraintfullcap2 = pyo.Constraint(hours, rule = binary_tescap2)
 
 def tes_inflow_limit_upper(model, hour):
     return model.inflow_tes[hour] <= inflow_maxcap
-model.tesin_limup = pyo.Constraint(hours, rule = tes_inflow_limit_upper)
+model.tesin_limup = pyo.Constraint(hours, rule=tes_inflow_limit_upper)
 
 
 def tes_inflow_limit_lower(model, hour):
     return inflow_lowcap <= model.inflow_tes[hour]
-model.tesin_limlow = pyo.Constraint(hours, rule = tes_inflow_limit_lower)
+model.tesin_limlow = pyo.Constraint(hours, rule=tes_inflow_limit_lower)
 
 
 # ----- TES production limit constraints ----- #
 
 def tes_outflow_limit_upper(model, hour):
     return model.outflow_tes[hour] <= outflow_maxcap
-model.tesout_limup = pyo.Constraint(hours, rule = tes_outflow_limit_upper)
+model.tesout_limup = pyo.Constraint(hours, rule=tes_outflow_limit_upper)
 
 
 def tes_outflow_limit_lower(model, hour):
     return outflow_lowcap <= model.outflow_tes[hour]
-model.tesout_limlow = pyo.Constraint(hours, rule = tes_outflow_limit_lower)
+model.tesout_limlow = pyo.Constraint(hours, rule=tes_outflow_limit_lower)
 
 
 # %% ----- TES Capacity Constraint ----- #
 
 def tes_cap_upper(model, hour):
     return model.fuel_tes[hour] <= model.tes_maxcap
-model.tes_up_cap = pyo.Constraint(hours, rule = tes_cap_upper)
+model.tes_up_cap = pyo.Constraint(hours, rule=tes_cap_upper)
 
 
 def tes_cap_lower(model, hour):
     return tes_lowcap <= model.fuel_tes[hour]
-model.tes_low_cap = pyo.Constraint(hours, rule = tes_cap_lower)
+model.tes_low_cap = pyo.Constraint(hours, rule=tes_cap_lower)
 
 
 # %% ----- Combining power constraint ----- #
 
 def comb_power(model, hour):
     return model.power_generation[hour] == model.basepow[hour] + model.outflow_tes[hour]
-model.combining_power = pyo.Constraint(hours, rule = comb_power)
+model.combining_power = pyo.Constraint(hours, rule=comb_power)
 
 # %% ----- Solving the optimization problem ----- #
 
-opt = SolverFactory("gurobi", solver_io = "python")
+opt = SolverFactory("gurobi", solver_io="python")
 # opt.options['tee'] = True
 results = opt.solve(model, load_solutions = True)
 
@@ -258,6 +253,7 @@ val_capacity = list(pyo.value(model.fuel_tes[hour]) for hour in hours)
 val_state = list(pyo.value(model.power_generation_state[hour]) for hour in hours)
 val_tes_full_state = list(pyo.value(model.tes_full_state[hour]) for hour in hours)
 
+
 # Most code for plots are included, but commented out
 # because of the total additional run-time for plotting.
 # This allows for selection of plots based on needs.
@@ -278,13 +274,14 @@ plt.ylim(0, 800)
 ph2.set_yticks([])
 plt.show()
 
-
+"""
 # Plotting combined power generation
 fig, com = plt.subplots(figsize=(50, 6))  # Set the figure width here
 com.set_ylabel("[MW]", fontsize=40)  # Adjust font size for y-axis label
 com.tick_params(axis='both', labelsize=35)  # Adjust font size for ticks
 com.set_yticks([0, gen_maxcap - outflow_maxcap, gen_maxcap, gen_maxcap + outflow_maxcap])
-com.plot(hourslist[:tf - step1], val_gen[:tf - step1], color='r')
+#com.plot(hourslist[:tf - step1], val_gen[:tf - step1], color='r')
+com.plot(hourslist[:24], val_gen[:24], color='r')
 plt.ylim(-0.04 * (gen_maxcap + inflow_maxcap), 1.04 * (gen_maxcap + inflow_maxcap))
 com2 = com.twinx()
 com2.set_ylabel('[%]', fontsize=40)
@@ -292,7 +289,7 @@ com2.tick_params(axis='both', labelsize=35)
 com2.set_yticks([0, 100, 200, 300])
 plt.ylim(- 0.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))), 1.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))))
 plt.show()
-
+"""
 
 # Duration curve
 sort = np.sort(val_gen)[::-1]
@@ -306,7 +303,7 @@ dur2.axhline(y = 100, color = 'r', linestyle = 'dashed')
 plt.ylim(- 0.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))), 1.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))))
 dur2.set_yticks([0, 100])
 plt.show()
-"""
+
 
 # Creating plot for tes capacity
 fig, cap = plt.subplots(figsize=(50, 10))
@@ -322,7 +319,7 @@ cap2.tick_params(axis='both', labelsize=35)
 cap2.set_yticks([0, 50, 100])
 plt.ylim(- 0.04*100, 1.04*100)
 plt.show()
-#"""
+"""
 
 # %% ----- Calculating value factor ----- #
 
@@ -384,7 +381,7 @@ if step1 == 1 and tf == 8758:
                 mon_cap_lim[mon_ins[m]] += model.tes_full_state[h].value
                 pp_t += power_prices[h]
 
-            if power_prices[h] > MC_base:
+            if power_prices[h] > MC_gen:
                 h_profit += 1
 
             avg_pp.append(pp_t / mon_lens[m])
