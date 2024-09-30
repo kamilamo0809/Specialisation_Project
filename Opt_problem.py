@@ -1,8 +1,9 @@
 # %% ----- Interchangeable data - User Interface ----- #
 
 # Year to examine
-year = 2022
+year = 2050
 # Use 2021, 2022 or 2023, earlier years could be implemented
+# You can also use 2050 if you want to use a made-up scenario
 
 # Zone within Norway to examine
 zone = "NO1"
@@ -56,7 +57,7 @@ tes_lowcap = 0
 
 #
 interest_rate = 0.05
-investment_cost = 800000 # NOK/MWh
+investment_cost = 8000 # NOK/MWh
 lifetime = 40 # Years
 # TODO: check if numbers are correct
 
