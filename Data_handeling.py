@@ -17,13 +17,13 @@ def read_previous_spot(year: int, zone: str) -> dict:
 
     if file_extension.lower() == '.csv':
         data = pd.read_csv(filename)
-        data = data['Price'] * 10 # convert from øre/kWh to NOK/MWh
+        data = data['Price'] * 10 / 3600000 # convert from øre/kWh to NOK/MWh til NOK/kJ
 
     elif file_extension.lower() in ['.xls', '.xlsx']:
         # Read excel
         data = pd.read_excel(filename)
         # Extratc numbers from the right price zone
-        data = data[zone] * 1000  # convert from NOK/kWh to NOK/MWh
+        data = data[zone] * 1000 / 3600000 # convert from NOK/kWh to NOK/MWh til NOK/kJ
 
     # Convert to dictionary
     price_dict = data.to_dict()

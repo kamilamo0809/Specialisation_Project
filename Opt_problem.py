@@ -8,6 +8,7 @@ year = 2050
 # Zone within Norway to examine
 zone = "NO1"
 # Uke "NO1", "NO2", "NO3", "NO4", "NO5"
+# if you chose 2050 (made rup scenario), it doesn't matter which zone you choose here
 
 # Define the set of hours in the year (step1 = 1, tf = 8760)
 # or define time interval to be examined
@@ -20,9 +21,9 @@ gen_lowcap = 0
 # TODO: check if numbers are correct
 
 # Production price (cost) in NOK/MWh (marginal cost)
-MC_gen = 10.0  # Example, will be lower
-MC_turbo = MC_gen * 1.1  # Example
-# TODO: find more correct numbers var 100 før!
+MC_base = 50.0  # Example
+MC_TES = MC_base * 1.1  # Example
+# TODO: find more correct numbers, var 100 før!
 
 # Defining ramping limits for electric generator
 lower_ramp_lim = -5  # [%/min]
@@ -77,11 +78,9 @@ from Data_handeling import read_previous_spot
 model = pyo.ConcreteModel()
 
 # List for hour range to be examined
-# Assuming there are 8760 hours in a year (8761, one month: 745)
 hours = range(step1, tf + 1)
 
-
-# %% ----- Reading data ----- #
+# %% ----- Reading spot price data from csv or excel----- #
 
 power_prices = read_previous_spot(year, zone)
 
