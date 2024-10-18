@@ -1,14 +1,5 @@
 # %% ----- Interchangeable data - User Interface ----- #
 
-def massflow_to_power(massflow):
-    return massflow * 60 * 60 * (h_turbine_input - h_turbine_output)
-
-def power_to_massflow(power):
-    return power / (60 * 60 * (h_turbine_input - h_turbine_output))
-
-def joules_to_watt(joules):
-    return joules / (60 * 60)
-
 # Year to examine
 year = 2050
 # Use 2021, 2022 or 2023, earlier years could be implemented
@@ -32,7 +23,7 @@ MC_TES = MC_base * 1.1  # Example
 
 # Investment parameters
 interest_rate = 0.05
-investment_cost = 20 # NOK/kg
+investment_cost = 20 # NOK/kg # TODO: sett til 20
 lifetime = 40 # Years
 # TODO: check if numbers are correct
 
@@ -66,9 +57,12 @@ model.time = pyo.Set(initialize=range(step1, tf + 1))
 # TES size
 model.mass_TES = pyo.Var(within = pyo.NonNegativeReals)
 
+# Charging
+model.is_charging = pyo.Var(model.time, domain = pyo.Binary)
 
 # Internal energy TES
 model.u_TES = pyo.Var(model.time, within = pyo.NonNegativeReals)
+model.u_TES_max = pyo.Var(within = pyo.NonNegativeReals)
 
 # Mass flows
 model.massflow_base =   pyo.Var(model.time, within = pyo.NonNegativeReals)
@@ -85,86 +79,113 @@ model.power_TES = pyo.Var(model.time, within = pyo.NonNegativeReals)
 def objective_rule(model):
     return sum(- investment_cost * model.mass_TES * (interest_rate / (1 - (1 + interest_rate) ** (- lifetime)))
                 + ( power_prices[hour] - MC_base ) * model.power_base[hour]
-                + ( power_prices[hour] - MC_TES ) * model.power_TES[hour]  for hour in model.time)
+                + ( power_prices[hour] - MC_TES ) * model.power_TES[hour] for hour in model.time)
 model.objective = pyo.Objective(rule = objective_rule, sense = pyo.maximize)
 
 # %% ----- Parameters ----- #
 
 # TODO: find enthalpies, efficiencies, temperatures
 # Max size on TES system
-max_mass_TES = 10000000
+max_mass_TES = 10000 #10000000
 
 # Enthalpies
-h_turbine_input = 3100              # J/kg
-h_turbine_output = 2200             # J/kg
-h_TES_input = 3100                  # J/kg
-h_TES_output = 2200                 # J/kg
+h_turbine_in = 3100           # kJ/kg
+h_turbine_out = 2200          # kJ/kg
+
+h_delta_turbine = h_turbine_in - h_turbine_out
+
+h_charge_in = 2760            # kJ/kg
+h_charge_out = 650            # kJ/kg
+
+h_discharge_in = 2774         # kJ/kg
+h_discharge_out = 1000        # kJ/kg
+
+h_delta_charge = h_charge_in - h_charge_out
+h_delta_discharge = h_discharge_in - h_discharge_out
 
 # Initial internal energy
-u_TES_init = 0                      # J
+u_TES_init = 0                      # kWh
 
 # Efficiencies
 efficiency_turbine = 0.9
-efficiency_charge = 0.85
-efficiency_discharge = 0.85
+efficiency_charge = 0.9
+efficiency_discharge = 0.9
 
 # TES temperatures
-temperature_max = 600 + 273.15      # K
+temperature_max = 700 + 273.15      # K
 temperature_min = 200 + 273.15      # K
 
 # Specific heat capacity
-specific_heat = 1500                 # J / kg * K
+specific_heat = 1                 # kJ / kg * K
 
 # Max steam generation from reactor
-massflow_gen_max = power_to_massflow(300000000)  # kg/h
+massflow_gen_max = 300000 / h_delta_turbine  # kg/s
 
 # Ramping
-pro = 0.02 # %/min
+pro = 1 # %/min
 ramping = pro * 0.6 * massflow_gen_max  # kg/h
 
-discharging_power = 400000000 # MW
+charge_cap = 200000 / h_delta_turbine # kg/s # TODO finn ut hva charge og discharge power er
+discharge_cap = 200000 / h_delta_turbine # kg/s
 
 
 # %% ----- Constraints ----- #
 
 # Base power generation
 def base_power_rule(model, hour):
-    return model.power_base[hour] == massflow_to_power(model.massflow_base[hour])
+    return model.power_base[hour] == model.massflow_base[hour] * h_delta_turbine
 model.base_power = pyo.Constraint(model.time, rule = base_power_rule)
 
 # TES power generation
 def TES_power_rule(model, hour):
-    return model.power_TES[hour] == massflow_to_power(model.massflow_out[hour])
+    return model.power_TES[hour] == model.massflow_out[hour] * h_delta_turbine
 model.TES_power = pyo.Constraint(model.time, rule = TES_power_rule)
 
 # Energy balance in TES
 def energy_balance_rule(model, hour):
     if hour == step1:
-        return (model.u_TES[hour] ==    u_TES_init
-                                        + model.massflow_in[hour] * h_TES_input * efficiency_charge
-                                        - (model.massflow_out[hour] * h_TES_output)/efficiency_discharge)
+        return model.u_TES[hour] == u_TES_init + model.massflow_in[hour] * h_delta_charge * efficiency_charge
 
     else:
         return (model.u_TES[hour] ==    model.u_TES[hour - 1]
-                                        + model.massflow_in[hour] * h_TES_input * efficiency_charge
-                                        - (model.massflow_out[hour] * h_TES_output)/efficiency_discharge)
+                                        + model.massflow_in[hour] * h_delta_charge * efficiency_charge
+                                        - (model.massflow_out[hour] * h_delta_discharge)/efficiency_discharge)
 model.energy_balance = pyo.Constraint(model.time, rule = energy_balance_rule)
 
+# End internal energy
 def internal_energy_end_rule(model):
     return model.u_TES[tf] == u_TES_init
 model.internal_energy_end = pyo.Constraint(rule = internal_energy_end_rule)
 
+# Connot discharge the first hour
+def discharge_first_hour(model):
+    return model.massflow_out[step1] == 0
+model.discharge_first_hour = pyo.Constraint(rule = discharge_first_hour)
+
+# Connot charge and discharge at the same time
+def charge_power_cap_rule(model, hour):
+    return model.massflow_in[hour] <= charge_cap * model.is_charging[hour]
+model.charge_power_cap_rule = pyo.Constraint(model.time, rule = charge_power_cap_rule)
+
+def discharge_power_cap_rule(model, hour):
+    return model.massflow_out[hour] <= discharge_cap * (1 - model.is_charging[hour])
+model.discharge_power_cap_rule = pyo.Constraint(model.time, rule = discharge_power_cap_rule)
+
 # Max TES capacity
 def max_TES_cap_rule(model, hour):
-    return (model.u_TES[hour] <= model.mass_TES * specific_heat * (temperature_max - temperature_min))
+    return (model.u_TES[hour] <= model.u_TES_max)
 model.max_TES_cap = pyo.Constraint(model.time, rule = max_TES_cap_rule)
+
+def max_TES(model):
+    return (model.u_TES_max == model.mass_TES * specific_heat * (temperature_max - temperature_min)) # TODO: finn ut om det skal vare * 3600 her
+model.max_TES = pyo.Constraint(rule = max_TES)
 
 # ramping power min
 def min_ramping_rule(model, hour):
     if hour == step1:
         return pyo.Constraint.Skip
     else:
-        return -ramping <= massflow_to_power(model.massflow_gen[hour] - model.massflow_gen[hour - 1])
+        return -ramping <= model.massflow_gen[hour] - model.massflow_gen[hour - 1]
 model.min_ramping = pyo.Constraint(model.time, rule = min_ramping_rule)
 
 # ramping power max
@@ -172,7 +193,7 @@ def max_ramping_rule(model, hour):
     if hour == step1:
         return pyo.Constraint.Skip
     else:
-        return massflow_to_power(model.massflow_gen[hour] - model.massflow_gen[hour - 1]) <= ramping
+        return model.massflow_gen[hour] - model.massflow_gen[hour - 1] <= ramping
 model.max_ramping = pyo.Constraint(model.time, rule = max_ramping_rule)
 
 # Max reactor generation
@@ -182,7 +203,7 @@ model.max_generation = pyo.Constraint(model.time, rule = max_generation_rule)
 
 # Max mass for TES
 def max_size_rule(model):
-    return (model.mass_TES <= max_mass_TES)
+    return model.mass_TES <= max_mass_TES
 model.max_size = pyo.Constraint(rule = max_size_rule)
 
 # mass conservation
@@ -190,33 +211,13 @@ def mass_conservation_rule(model, hour):
     return (model.massflow_gen[hour] == model.massflow_in[hour] + model.massflow_base[hour])
 model.mass_conservaton = pyo.Constraint(model.time, rule = mass_conservation_rule)
 
-'''
-# Charging constraint:
-def charging_rule(model, hour):
-    return (model.massflow_in[hour] <= model.mass_TES * specific_heat * (temperature_max - temperature_min))
-model.charging = pyo.Constraint(model.time, rule = charging_rule)
-'''
 # TODO: make this constraint better
 
-# TODO: make a discharge constraint!
-
-'''
-# Charging constraint:
+# Disharging constraint:
 def discharging_rule(model, hour):
-    return (model.power_TES[hour] <= 400000000)
+    return (model.massflow_out[hour] * h_delta_discharge)/efficiency_discharge <= model.u_TES_max
 model.discharging = pyo.Constraint(model.time, rule = discharging_rule)
-'''
-
-# Sum
-def power_sum_rule(model):
-    return sum(model.massflow_in[hour] * h_TES_input * efficiency_charge
-            - (model.massflow_out[hour] * h_TES_output)/efficiency_discharge for hour in model.time) == 0
-
-# Mass flow constraints:
-
-def discharging_power_rule(model, hour):
-    return massflow_to_power(model.massflow_out[hour]) <= discharging_power
-model.discharging_power = pyo.Constraint(model.time, rule = discharging_power_rule)
+# TODO: Make a better function for discharging
 
 # %% ----- Solving the optimization problem ----- #
 
@@ -234,16 +235,14 @@ print(f'\nSolver Status: {results.solver.termination_condition}')
 
 # %% ----- Printing results ----- #
 
-storage_cap = pyo.value(model.mass_TES) * specific_heat * (temperature_max - temperature_min)
-
 surplus_battery = sum((pyo.value(power_prices[hour]) - MC_TES ) * pyo.value(model.power_TES[hour])  for hour in hours)
 surplus_base = sum((pyo.value(power_prices[hour]) - MC_base ) * pyo.value(model.power_base[hour])  for hour in hours)
 
 print("Surplus from battery storage: ", round(surplus_battery / 1e6, 2), "MNOK")
 print("Surplus from base production: ", round(surplus_base / 1e6, 2), "MNOK")
 print("Total surplus: ", round(pyo.value(model.objective) / 1e6, 2), "MNOK")
-print(f'Optmial TES size: {round(model.mass_TES.value / 1e3, 3)} tons')
-print(f'TES storage capacity: {round(storage_cap / 1000000, 2)} MW')
+print(f'Optmial TES size: {round(model.mass_TES.value, 1)} kg')
+print(f'TES storage capacity: {round(pyo.value(model.u_TES_max), 2)} kWh')
 
 # %% ----- Plotting results ----- #
 
@@ -252,9 +251,14 @@ massflow_base = list(pyo.value(model.massflow_base[hour]) for hour in hours)
 massflow_out = list(pyo.value(model.massflow_out[hour]) for hour in hours)
 massflow_in = list(pyo.value(model.massflow_in[hour]) for hour in hours)
 u = list(pyo.value(model.u_TES[hour]) for hour in hours)
-power_TES = list(pyo.value(model.power_TES[hour] / 1000000) for hour in hours)
-power_base = list(pyo.value(model.power_base[hour] / 1000000) for hour in hours)
-battery_energy = list((pyo.value(model.u_TES[hour]) / 1000000) for hour in hours)
+power_TES = list(pyo.value(model.power_TES[hour]) for hour in hours)
+power_base = list(pyo.value(model.power_base[hour]) for hour in hours)
+battery_energy = list((pyo.value(model.u_TES[hour])) for hour in hours)
+m_in = list((pyo.value(model.massflow_in[hour])) for hour in hours)
+m_out = list((pyo.value(model.massflow_out[hour])) for hour in hours)
+m_base = list((pyo.value(model.massflow_base[hour])) for hour in hours)
+total_power = [power_TES[i] + power_base[i] for i in hours]
+
 
 def make_monthly_list(yearly_list):
     days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -275,19 +279,53 @@ def plot_power_output(list_of_mont_numbers):
         plt.plot(time[i - 1], TES[i - 1], color = "hotpink", label = "power from battery storage")
         plt.plot(time[i - 1], base[i - 1], color = "mediumpurple", label = "base power")
         plt.xlabel("Time [h]")
-        plt.ylabel("Power [MW]")
+        plt.ylabel("Power [kW]")
         plt.title(f"Power output for month number {i}")
+        plt.legend()
         plt.show()
+
+
+def plot_power_output_sorted():
+    power_TES.sort(reverse = True)
+    power_base.sort(reverse = True)
+    plt.plot(hourslist, power_TES, color = "hotpink", label = "power from battery storage")
+    plt.plot(hourslist, power_base, color = "mediumpurple", label = "base power")
+    plt.xlabel("Time [h]")
+    plt.ylabel("Power [kW]")
+    plt.title(f"Power output through the year")
+    plt.legend()
+    plt.show()
+
+
+def plot_total_power_output_sorted():
+    total_power.sort(reverse = True)
+    plt.plot(hourslist, total_power, color = "lightseagreen", label = "Total power outbut [MW]")
+    plt.fill_between(hourslist, total_power, color = 'palegreen', alpha = 0.4)
+    plt.xlabel("Time [h]")
+    plt.ylabel("Power [kW]")
+    plt.title(f"Total power output through the year")
+    plt.legend()
+    plt.show()
 
 def plot_battery_storage():
     plt.plot(hourslist, battery_energy, color = 'dodgerblue')
     plt.fill_between(hourslist, battery_energy, color = 'skyblue', alpha = 0.4)
     plt.title("Stored energy in TES through the year")
     plt.xlabel("Time [h]")
-    plt.ylabel("Power [MW]")
-    plt.legend()
+    plt.ylabel("Power [kWh]")
     plt.show()
 
+def plot_battery_storage_sorted():
+    battery_energy.sort(reverse = True)
+    plt.plot(hourslist, battery_energy, color = 'dodgerblue')
+    plt.fill_between(hourslist, battery_energy, color = 'skyblue', alpha = 0.4)
+    plt.title("Stored energy in TES through the year")
+    plt.xlabel("Time [h]")
+    plt.ylabel("Power [kWh]")
+    plt.show()
+
+plot_battery_storage_sorted()
 #plot_battery_storage()
+plot_power_output_sorted()
 
 # TODO: husk at batteriet har en "duration" siden varme ikke kan lagres særlig lenge
