@@ -245,6 +245,13 @@ def comb_power(model, hour):
     return model.power_generation[hour] == model.basepow[hour] + model.outflow_tes[hour]
 model.combining_power = pyo.Constraint(hours, rule=comb_power)
 
+
+
+
+
+
+
+
 # %% ----- Solving the optimization problem ----- #
 
 opt = SolverFactory("gurobi", solver_io="python")
@@ -256,85 +263,6 @@ print('\n')
 # %% ----- Printing and plotting results ----- #
 
 print("Optimal Surplus: ", pyo.value(model.objective), "NOK")
-
-# ---- Plotting distribution ---- #
-
-
-hourslist             = list(hours)
-val_gen               = list(pyo.value(model.power_generation[hour]) for hour in hours)
-val_base              = list(pyo.value(model.basepow[hour]) for hour in hours)
-val_tes               = list(pyo.value(model.outflow_tes[hour]) for hour in hours)
-val_inflow            = list(pyo.value(model.inflow_tes[hour]) for hour in hours)
-val_capacity          = list(pyo.value(model.fuel_tes[hour]) for hour in hours)
-val_state             = list(pyo.value(model.power_generation_state[hour]) for hour in hours)
-val_tes_full_state    = list(pyo.value(model.tes_full_state[hour]) for hour in hours)
-
-
-# Most code for plots are included, but commented out 
-# because of the total additional run-time for plotting.
-# This allows for selection of plots based on needs.
-
-"""
-# Plotting price hourly
-fig, ph = plt.subplots(figsize=(50, 6))
-ph.set_ylabel('[NOK/MWh]', fontsize=40)
-ph.tick_params(axis='both', labelsize=35)
-plt.ylim(0, 800)
-ph.plot(hourslist[:], power_prices[step1-1:tf],
-        color='b')
-ph2 = ph.twinx()
-ph2.set_ylabel('', fontsize=40)
-ph2.tick_params(axis='both', labelsize=35)
-ph2.axhline(y = 100, color = 'k', linestyle = 'dashed', linewidth=2)
-plt.ylim(0, 800)
-ph2.set_yticks([])
-plt.show()
-
-
-# Plotting combined power generation
-fig, com = plt.subplots(figsize=(50, 6))  # Set the figure width here
-com.set_ylabel("[MW]", fontsize=40)  # Adjust font size for y-axis label
-com.tick_params(axis='both', labelsize=35)  # Adjust font size for ticks
-com.set_yticks([0, gen_maxcap - outflow_maxcap, gen_maxcap, gen_maxcap + outflow_maxcap])
-com.plot(hourslist[:tf - step1], val_gen[:tf - step1], color='r')
-plt.ylim(-0.04 * (gen_maxcap + inflow_maxcap), 1.04 * (gen_maxcap + inflow_maxcap))
-com2 = com.twinx()
-com2.set_ylabel('[%]', fontsize=40)
-com2.tick_params(axis='both', labelsize=35)
-com2.set_yticks([0, 100, 200, 300])
-plt.ylim(- 0.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))), 1.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))))
-plt.show()
-
-
-# Duration curve
-sort = np.sort(val_gen)[::-1]
-plt.plot(hourslist[:tf - step1], sort[:tf - step1])
-plt.ylim(- 0.04*(gen_maxcap+inflow_maxcap), 1.04*(gen_maxcap+inflow_maxcap))
-plt.xlabel("Hours [t]")
-plt.ylabel("Produced power [MW]")
-dur2 = plt.twinx()
-dur2.set_ylabel('% of baseload power')
-dur2.axhline(y = 100, color = 'r', linestyle = 'dashed')
-plt.ylim(- 0.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))), 1.04*(100/(gen_maxcap/(gen_maxcap+inflow_maxcap))))
-dur2.set_yticks([0, 100])
-plt.show()
-
-
-# Creating plot for tes capacity
-fig, cap = plt.subplots(figsize=(50, 6))
-cap.set_xlabel("Hours [h]", fontsize=40)
-cap.set_ylabel("[MWh]", fontsize=40)  
-cap.tick_params(axis='both', labelsize=35)  
-cap.set_yticks([tes_maxcap/2, tes_maxcap])
-cap.plot(hourslist[:tf - step1], val_capacity[:tf - step1], color='y')
-cap2 = cap.twinx()
-cap2.set_ylabel('[%]', fontsize=40)
-cap2.tick_params(axis='both', labelsize=35)
-cap2.set_yticks([0, 50, 100])
-plt.ylim(- 0.04*100, 1.04*100)
-plt.show()
-"""
-
 
 # %% ----- Calculating value factor ----- #
 
@@ -361,115 +289,3 @@ for h in hourslist:
     
 cf = totsum/((tf+1-step1)*gen_maxcap)
 print(cf)
-# %% ----- Making monthly plots ----- # 
-
-if step1 == 1 and tf == 8758:
-    mon_lens = [744, 672, 744, 720, 744, 720, 744, 744, 719, 744, 719, 744]
-    mon_ins = list(range(0, 12))
-    
-    tot_pow = []
-    tot_base = []
-    tot_tes = []
-    avg_pp = []
-    mon_tot_cap = []
-    mon_cap_lim = []
-    mon_cap_lim_rels = []
-    
-    h_passed = 0
-    h_profit = 0
-    
-    for m in mon_ins:
-        pp_t = 0
-        for h in range(1 + h_passed, 1 + mon_lens[m] + h_passed):
-            if h == 1 + h_passed:
-                tot_pow.append(model.power_generation[h].value)
-                tot_base.append(model.basepow[h].value)
-                tot_tes.append(model.outflow_tes[h].value)
-                mon_tot_cap.append(model.fuel_tes[h].value)
-                mon_cap_lim.append(model.tes_full_state[h].value)
-                pp_t += power_prices[h]
-            else:
-                tot_pow[mon_ins[m]]     += model.power_generation[h].value
-                tot_base[mon_ins[m]]    += model.basepow[h].value
-                tot_tes[mon_ins[m]]     += model.outflow_tes[h].value
-                mon_tot_cap[mon_ins[m]] += model.fuel_tes[h].value
-                mon_cap_lim[mon_ins[m]] += model.tes_full_state[h].value
-                pp_t += power_prices[h]
-                
-            if power_prices[h] > MC_gen:
-                h_profit += 1
-                        
-            avg_pp.append(pp_t/mon_lens[m])  
-                        
-            h_passed += mon_lens[m]
-                        
-            mon_cap_lim_rels.append(mon_cap_lim[m]/mon_lens[m])
-                  
-# Most code for plots are included, but commented out 
-# because of the total additional run-time for plotting.
-# This allows for selection of plots based on needs.          
-            
-    """
-    # Plotting monthly plots
-    fig, mly = plt.subplots()
-    bottom = np.zeros(len(mon_ins))
-                        
-    mly.set_xlabel("Month nr.")
-    mly.set_ylabel("Aggregate produced energy [GWh]")
-    mly.set_xticks(range(1, 13))
-    mly.set_xticklabels(range(1, 13))
-    mly.bar(range(1, 13), np.array(tot_pow)/1000.0, color='r', width=0.8)
-                        
-    # Adding Twin Axes to plot using dataset_2
-    mly2 = mly.twinx()
-
-    mly2.set_ylabel('Average monthly power prices [NOK/MWh]')
-    mly2.plot(range(1, 13), avg_pp, color='b')
-    
-    #plt.title("Monthly NPP energy production with TES")
-    plt.show()
-    
-    -----------------------------
-    
-    #... cap 
-
-    fig, mcap = plt.subplots()
-    bottom = np.zeros(len(mon_ins))
-    
-    mcap.set_xlabel("Month nr.")
-    mcap.set_ylabel("Stored thermal energy [GWh]")
-    mcap.set_xticks(range(1, 13))
-    mcap.set_xticklabels(range(1, 13))
-    mcap.bar(range(1, 13), np.array(mon_tot_cap)/1000.0,
-             color='y', width=0.8)
-    
-    #% of monthly hours where tes capacity is full
-    
-    fig, mpcap = plt.subplots()
-    bottom = np.zeros(len(mon_ins))
-    
-    mpcap.set_xlabel("Month nr.")
-    mpcap.set_ylabel("% of hours where TES capacity is reached [%]")
-    mpcap.set_xticks(range(1, 13))
-    mpcap.set_xticklabels(range(1, 13))
-    mpcap.bar(range(1, 13), np.array(mon_cap_lim_rels)*100,
-              color='orange', width=0.8)
-    plt.show()
-    ----------------------------------
-    
-    # Comb. plots
-    
-    fig, mlyc = plt.subplots()
-    bottom = np.zeros(len(mon_ins))
-    
-    mlyc.set_xlabel("Month nr.")
-    mlyc.set_ylabel("Aggregate produced energy [GWh]")
-    mlyc.set_xticks(range(1, 13))
-    mlyc.set_xticklabels(range(1, 13))
-    mlyc.bar(range(1, 13), np.array(tot_base)/1000.0, bottom = bottom,
-             color='r', width=0.8, label='Baseload')
-    mlyc.bar(range(1, 13), np.array(tot_tes)/1000.0, bottom = bottom + np.array(tot_base)/1000.0,
-             color='darkred', width=0.8, label='TES')
-    plt.legend(loc="best")
-    plt.show()
-    """
