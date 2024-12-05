@@ -54,7 +54,6 @@ def plot_spot(year = 2050, zone = 'NO1'):
     plt.title('Spot Price Through The Year', fontsize=16, fontweight='bold')
     plt.legend(loc='upper right', fontsize=10)
     plt.tight_layout()
-    plt.savefig('/Users/kamillamoen/Documents/plots_latex/spot_price_plot.eps', format='eps', dpi=300)  # Lagre som PDF
     plt.show()
 
     # Second Plot
@@ -67,5 +66,4 @@ def plot_spot(year = 2050, zone = 'NO1'):
     plt.title('Spot prices sorted', fontsize=16, fontweight='bold')
     plt.legend(loc='upper right', fontsize=10)
     plt.tight_layout()
-    plt.savefig('/Users/kamillamoen/Documents/plots_latex/spot_price_plot_sorted.eps', format='eps', dpi=300)  # Lagre som PDF
     plt.show()
