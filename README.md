@@ -48,7 +48,7 @@ To run the optimization problem:
 ### Contact
 * Kamilla Aarflot Moen - [Email](mailto:kamilamo@stud.ntnu.no)
 
-* Project Link: [Link to GitHub repository](https://github.com/kamilamo0809/Specialisation_Project)
+* Project Link: [Link to GitHub repository](https://github.com/kamilamo0809/Specialization_Project)
 
 ### Acknowledgments
 - [Last year's specialization project](https://github.com/Simend18/TET4510_Project): A similar project that served as a reference and inspiration.
