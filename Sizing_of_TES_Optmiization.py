@@ -336,7 +336,7 @@ def print_res(model, year, zone, MC_TES, MC_base, start, stop, density):
                     f'TES tank volume = {round(pyo.value(model.mass_TES) / density, 2)} m3' + fg.rs)
 
 
-def get_dict(model, start = 0, stop = 8759):
+def get_dict(model, filename, start = 0, stop = 8759):
     '''
     This function makes lists out of pyomo variables from a solved model for each timestamp
 
@@ -359,7 +359,7 @@ def get_dict(model, start = 0, stop = 8759):
                   'heat out':       list(pyo.value(model.q_out[hour] / 1000) for hour in hours)}        # MW
 
     df = pd.DataFrame(everything)
-    df.to_csv('Results.csv', index = False)
+    df.to_csv(filename, index = False)
 
     return everything
 

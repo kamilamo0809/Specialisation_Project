@@ -8,7 +8,7 @@ def read_previous_spot(year: int, zone: str) -> dict:
     file_dict = {2021: "spotpriser_21.xlsx",
                  2022: "spotpriser_22.xlsx",
                  2023: "spotpriser_23.xlsx",
-                 2050: "modified_spot_prices.csv"}
+                 2040: "modified_spot_prices.csv"}
 
     # Extract the correct file from the dictionary
     filename = file_dict[year]
@@ -31,7 +31,7 @@ def read_previous_spot(year: int, zone: str) -> dict:
 
     return price_dict
 
-def plot_spot(year = 2050, zone = 'NO1'):
+def plot_spot(year = 2040, zone = 'NO1'):
     print(''' ------------------------ Plotting spot prices ------------------------''')
 
     spot = read_previous_spot(year = year, zone = zone)

@@ -17,8 +17,8 @@ import pandas as pd
 
 ''' -------------------------- User Interface --------------------------'''
 
-# Year to examine (2023 or 2050)
-year = 2050
+# Year to examine (2023 or 2040)
+year = 2040
 zone = "NO1"
 start, stop = (0, 8759)
 
@@ -84,6 +84,9 @@ def main():
         dh.plot_spot(year = year, zone = zone)
 
     # ---------------- Solve sizing problem for chosen scenario ---------------- #
+    tes = True
+    if max_mass_TES == 0:
+        tes = False
 
     def Solve_problem():
         # Solve optimization model
@@ -95,18 +98,23 @@ def main():
         # Print results and save to csv
         opt.print_res(model, year, zone, MC_TES, MC_base, start, stop, density)
 
-        result_dict = opt.get_dict(model, start, stop)
+        result_dict = opt.get_dict(model, f'res{year}{tes}mfb.csv', start, stop)
 
     # ---------------- Plow results from optimization problem ---------------- #
     def Plot_problem():
         # Get results
-        result_dict = pd.read_csv('Results.csv').to_dict(orient='dict')
+        result_dict = pd.read_csv(f'res{year}{tes}.csv').to_dict(orient='dict')
 
-        plot.plot_everything_month([4], result_dict, year, zone)
-        #plot.plot_everything_month([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], lists, year, zone)
+        plot.plot_everything_month([5, 6, 7], result_dict, year, zone)
         plot.plot_everything_hour(result_dict)
         plot.duration(result_dict)
         plot.plot_total_power(result_dict)
+        plot.plot_efficiency()
+        plot.plot_material_bar()
+        plot.plot_everything_month_aggregated(result_dict, year, zone)
+        plot.plot_CF()
+        plot.plot_VF()
+        plot.plot_diff_VF_and_CF()
 
     # Run all tasks (comment out the tasks you don't want to run)
     data_handling_output()
